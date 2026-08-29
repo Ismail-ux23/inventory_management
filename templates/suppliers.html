@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Suppliers{% endblock %}
+{% block content %}
+<h1>Suppliers</h1>
+
+<form method="POST" class="inline-form-row">
+    <input type="text" name="name" placeholder="Supplier name" required>
+    <input type="text" name="contact_info" placeholder="Contact info (email/phone)">
+    <button type="submit" class="btn-primary">Add</button>
+</form>
+
+<table>
+    <thead><tr><th>Name</th><th>Contact</th><th># Products</th><th>Actions</th></tr></thead>
+    <tbody>
+        {% for s in suppliers %}
+        <tr>
+            <td>{{ s.name }}</td>
+            <td>{{ s.contact_info or "—" }}</td>
+            <td>{{ s.products|length }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('delete_supplier', supplier_id=s.id) }}"
+                      onsubmit="return confirm('Delete supplier {{ s.name }}?');" class="inline-form">
+                    <button type="submit" class="btn-link btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No suppliers yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

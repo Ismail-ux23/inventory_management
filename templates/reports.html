@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<h1>Reports</h1>
+
+<section class="card">
+    <h2>Stock Valuation — Total: ${{ total_value }}</h2>
+    <table>
+        <thead><tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Value</th></tr></thead>
+        <tbody>
+            {% for p in products_by_value %}
+            <tr>
+                <td>{{ p.name }}</td>
+                <td>{{ p.quantity }}</td>
+                <td>${{ "%.2f"|format(p.price) }}</td>
+                <td>${{ p.stock_value }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="muted">No products yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h2>Most Active Products (by total stock movement)</h2>
+    <table>
+        <thead><tr><th>Product</th><th>Total Units Moved</th></tr></thead>
+        <tbody>
+            {% for product, total in movement_data %}
+            <tr>
+                <td>{{ product.name }}</td>
+                <td>{{ total }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2" class="muted">No stock activity yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

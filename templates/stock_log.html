@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Adjust Stock — {{ product.name }}{% endblock %}
+{% block content %}
+<h1>Adjust Stock: {{ product.name }}</h1>
+<p class="muted">Current quantity: <strong>{{ product.quantity }}</strong></p>
+
+<form method="POST" class="form-card">
+    <label>Change Type</label>
+    <select name="change_type" required>
+        <option value="in">Stock In (received / restocked)</option>
+        <option value="out">Stock Out (sold / used)</option>
+        <option value="adjustment">Adjustment (set exact quantity, e.g. after a stock count)</option>
+    </select>
+
+    <label>Quantity</label>
+    <input type="number" name="qty" min="1" required>
+    <p class="hint">For "In" / "Out" this is how much to add or remove. For "Adjustment" this is the new total quantity.</p>
+
+    <label>Reason / Note</label>
+    <input type="text" name="reason" placeholder="e.g. Weekly delivery, damaged goods, stock count correction">
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">Save</button>
+        <a href="{{ url_for('products') }}" class="btn-secondary">Cancel</a>
+    </div>
+</form>
+
+<h2>History</h2>
+{% if logs %}
+<table>
+    <thead><tr><th>When</th><th>Type</th><th>Change</th><th>Reason</th><th>By</th></tr></thead>
+    <tbody>
+        {% for log in logs %}
+        <tr>
+            <td>{{ log.timestamp.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>{{ log.change_type }}</td>
+            <td>{{ "+" if log.change_qty > 0 else "" }}{{ log.change_qty }}</td>
+            <td>{{ log.reason or "—" }}</td>
+            <td>{{ log.user.email if log.user else "—" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="muted">No stock changes recorded yet.</p>
+{% endif %}
+{% endblock %}

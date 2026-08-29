@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Categories{% endblock %}
+{% block content %}
+<h1>Categories</h1>
+
+<form method="POST" class="inline-form-row">
+    <input type="text" name="name" placeholder="New category name" required>
+    <button type="submit" class="btn-primary">Add</button>
+</form>
+
+<table>
+    <thead><tr><th>Name</th><th># Products</th><th>Actions</th></tr></thead>
+    <tbody>
+        {% for c in categories %}
+        <tr>
+            <td>{{ c.name }}</td>
+            <td>{{ c.products|length }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('delete_category', category_id=c.id) }}"
+                      onsubmit="return confirm('Delete category {{ c.name }}?');" class="inline-form">
+                    <button type="submit" class="btn-link btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="muted">No categories yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

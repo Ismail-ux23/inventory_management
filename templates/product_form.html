@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if product else "Add" }} Product{% endblock %}
+{% block content %}
+<h1>{{ "Edit" if product else "Add" }} Product</h1>
+
+<form method="POST" class="form-card">
+    <label>SKU</label>
+    <input type="text" name="sku" value="{{ product.sku if product else '' }}" required>
+
+    <label>Name</label>
+    <input type="text" name="name" value="{{ product.name if product else '' }}" required>
+
+    <label>Description</label>
+    <textarea name="description" rows="3">{{ product.description if product else '' }}</textarea>
+
+    <label>Category</label>
+    <select name="category_id">
+        <option value="">— None —</option>
+        {% for c in categories %}
+        <option value="{{ c.id }}" {% if product and product.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Supplier</label>
+    <select name="supplier_id">
+        <option value="">— None —</option>
+        {% for s in suppliers %}
+        <option value="{{ s.id }}" {% if product and product.supplier_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Price ($)</label>
+    <input type="number" step="0.01" min="0" name="price" value="{{ product.price if product else 0 }}" required>
+
+    {% if not product %}
+    <label>Starting Quantity</label>
+    <input type="number" min="0" name="quantity" value="0">
+    <p class="hint">To change stock on an existing product, use the "Stock" action instead — it keeps an audit log.</p>
+    {% endif %}
+
+    <label>Reorder Level</label>
+    <input type="number" min="0" name="reorder_level" value="{{ product.reorder_level if product else 5 }}">
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">{{ "Save Changes" if product else "Add Product" }}</button>
+        <a href="{{ url_for('products') }}" class="btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

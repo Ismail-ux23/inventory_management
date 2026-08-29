@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ total_products }}</div>
+        <div class="stat-label">Total Products</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">${{ total_stock_value }}</div>
+        <div class="stat-label">Total Stock Value</div>
+    </div>
+    <div class="stat-card {% if low_stock_items %}stat-warning{% endif %}">
+        <div class="stat-value">{{ low_stock_items|length }}</div>
+        <div class="stat-label">Low Stock Items</div>
+    </div>
+</div>
+
+<div class="grid-two">
+    <section class="card">
+        <h2>⚠️ Low Stock Alerts</h2>
+        {% if low_stock_items %}
+        <table>
+            <thead><tr><th>Product</th><th>Qty</th><th>Reorder Level</th></tr></thead>
+            <tbody>
+                {% for p in low_stock_items %}
+                <tr>
+                    <td><a href="{{ url_for('edit_product', product_id=p.id) }}">{{ p.name }}</a></td>
+                    <td>{{ p.quantity }}</td>
+                    <td>{{ p.reorder_level }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="muted">All products are above their reorder level.</p>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2>Recent Stock Activity</h2>
+        {% if recent_logs %}
+        <table>
+            <thead><tr><th>Product</th><th>Type</th><th>Change</th><th>When</th></tr></thead>
+            <tbody>
+                {% for log in recent_logs %}
+                <tr>
+                    <td>{{ log.product.name }}</td>
+                    <td>{{ log.change_type }}</td>
+                    <td>{{ "+" if log.change_qty > 0 else "" }}{{ log.change_qty }}</td>
+                    <td>{{ log.timestamp.strftime("%Y-%m-%d %H:%M") }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="muted">No stock activity yet.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
