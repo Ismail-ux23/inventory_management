@@ -1,4 +1,5 @@
-from datetime import datetime
+import math
+import os
 from functools import wraps
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash
@@ -6,6 +7,7 @@ from sqlalchemy import func
 
 from extensions import db
 from models import User, Category, Supplier, Product, StockLog
+from stock import record_stock_change, StockConflict, MAX_QUANTITY
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -13,7 +15,7 @@ from models import User, Category, Supplier, Product, StockLog
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "dev-secret-key-change-this"  # change before deploying
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///inventory.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///inventory.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
@@ -36,6 +38,43 @@ def current_user():
     if "user_id" in session:
         return User.query.get(session["user_id"])
     return None
+
+
+def nonnegative_integer(value, label, default=0):
+    try:
+        result = int(value if value not in (None, "") else default)
+    except (ValueError, TypeError):
+        raise ValueError(f"{label} must be a whole number.") from None
+    if not 0 <= result <= MAX_QUANTITY:
+        raise ValueError(f"{label} must be between 0 and {MAX_QUANTITY}.")
+    return result
+
+
+def product_fields(form, *, include_quantity=False):
+    sku = form.get("sku", "").strip()
+    name = form.get("name", "").strip()
+    if not sku or not name:
+        raise ValueError("SKU and name are required.")
+    if len(sku) > 50 or len(name) > 200:
+        raise ValueError("SKU must be at most 50 characters and name at most 200.")
+    try:
+        price = float(form.get("price") or 0)
+    except (ValueError, TypeError):
+        raise ValueError("Price must be a valid number.") from None
+    if not math.isfinite(price) or price < 0:
+        raise ValueError("Price must be finite and nonnegative.")
+    fields = dict(sku=sku, name=name, price=price,
+                  description=form.get("description", "").strip(),
+                  reorder_level=nonnegative_integer(form.get("reorder_level"), "Reorder level", 5))
+    for key, model in (("category_id", Category), ("supplier_id", Supplier)):
+        value = form.get(key)
+        identifier = nonnegative_integer(value, key) if value else None
+        if identifier is not None and db.session.get(model, identifier) is None:
+            raise ValueError("Select an existing category or supplier.")
+        fields[key] = identifier
+    if include_quantity:
+        fields["quantity"] = nonnegative_integer(form.get("quantity"), "Starting quantity")
+    return fields
 
 
 @app.context_processor
@@ -147,7 +186,12 @@ def products():
         query = query.filter(db.or_(Product.name.ilike(like), Product.sku.ilike(like)))
 
     if category_id:
-        query = query.filter(Product.category_id == int(category_id))
+        try:
+            category_number = nonnegative_integer(category_id, "Category")
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("products"))
+        query = query.filter(Product.category_id == category_number)
 
     if low_stock_only:
         query = query.filter(Product.quantity <= Product.reorder_level)
@@ -172,41 +216,23 @@ def add_product():
     suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
 
     if request.method == "POST":
-        sku = request.form.get("sku", "").strip()
-        name = request.form.get("name", "").strip()
-
-        if not sku or not name:
-            flash("SKU and name are required.", "error")
-            return render_template("product_form.html", categories=categories, suppliers=suppliers)
-
-        if Product.query.filter_by(sku=sku).first():
+        try:
+            fields = product_fields(request.form, include_quantity=True)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return render_template("product_form.html", categories=categories, suppliers=suppliers), 400
+        if Product.query.filter_by(sku=fields["sku"]).first():
             flash("A product with that SKU already exists.", "error")
-            return render_template("product_form.html", categories=categories, suppliers=suppliers)
+            return render_template("product_form.html", categories=categories, suppliers=suppliers), 400
 
-        product = Product(
-            sku=sku,
-            name=name,
-            description=request.form.get("description", "").strip(),
-            price=float(request.form.get("price") or 0),
-            quantity=int(request.form.get("quantity") or 0),
-            reorder_level=int(request.form.get("reorder_level") or 5),
-            category_id=request.form.get("category_id") or None,
-            supplier_id=request.form.get("supplier_id") or None,
-        )
+        product = Product(**fields)
         db.session.add(product)
-        db.session.commit()
-
-        # If a starting quantity was given, log it as an initial stock-in.
+        db.session.flush()
         if product.quantity > 0:
-            log = StockLog(
-                product_id=product.id,
-                user_id=session["user_id"],
-                change_type="in",
-                change_qty=product.quantity,
-                reason="Initial stock",
-            )
-            db.session.add(log)
-            db.session.commit()
+            db.session.add(StockLog(product_id=product.id, user_id=session["user_id"],
+                                    change_type="in", change_qty=product.quantity, reason="Initial stock"))
+        # The product and initial audit entry succeed or roll back together.
+        db.session.commit()
 
         flash(f"Product '{product.name}' added.", "success")
         return redirect(url_for("products"))
@@ -222,21 +248,18 @@ def edit_product(product_id):
     suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
 
     if request.method == "POST":
-        new_sku = request.form.get("sku", "").strip()
-        existing = Product.query.filter_by(sku=new_sku).first()
+        try:
+            fields = product_fields(request.form)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return render_template("product_form.html", product=product, categories=categories, suppliers=suppliers), 400
+        existing = Product.query.filter_by(sku=fields["sku"]).first()
         if existing and existing.id != product.id:
             flash("Another product already uses that SKU.", "error")
-            return render_template("product_form.html", product=product, categories=categories, suppliers=suppliers)
-
-        product.sku = new_sku
-        product.name = request.form.get("name", "").strip()
-        product.description = request.form.get("description", "").strip()
-        product.price = float(request.form.get("price") or 0)
-        product.reorder_level = int(request.form.get("reorder_level") or 5)
-        product.category_id = request.form.get("category_id") or None
-        product.supplier_id = request.form.get("supplier_id") or None
-        # NOTE: quantity is intentionally NOT edited here — use the
-        # "Adjust Stock" action so every change is logged.
+            return render_template("product_form.html", product=product, categories=categories, suppliers=suppliers), 400
+        for key, value in fields.items():
+            setattr(product, key, value)
+        # Quantity changes only through the audited stock action.
 
         db.session.commit()
         flash("Product updated.", "success")
@@ -265,41 +288,18 @@ def adjust_stock(product_id):
     product = Product.query.get_or_404(product_id)
 
     if request.method == "POST":
-        change_type = request.form.get("change_type")  # in / out / adjustment
-        reason = request.form.get("reason", "").strip()
         try:
-            qty = int(request.form.get("qty") or 0)
-        except ValueError:
-            qty = 0
-
-        if qty <= 0:
-            flash("Enter a quantity greater than zero.", "error")
-            return render_template("stock_log.html", product=product)
-
-        if change_type == "in":
-            delta = qty
-        elif change_type == "out":
-            if qty > product.quantity:
-                flash("Cannot remove more stock than is currently available.", "error")
-                return render_template("stock_log.html", product=product)
-            delta = -qty
-        elif change_type == "adjustment":
-            # Manual correction: set absolute quantity instead of delta.
-            delta = qty - product.quantity
-        else:
-            flash("Invalid stock change type.", "error")
-            return render_template("stock_log.html", product=product)
-
-        product.quantity += delta
-        log = StockLog(
-            product_id=product.id,
-            user_id=session["user_id"],
-            change_type=change_type,
-            change_qty=delta,
-            reason=reason,
-        )
-        db.session.add(log)
-        db.session.commit()
+            if not request.form.get("qty", "").strip():
+                raise ValueError("Quantity is required.")
+            qty = nonnegative_integer(request.form.get("qty"), "Quantity")
+            record_stock_change(db.session, product, session["user_id"],
+                                request.form.get("change_type"), qty,
+                                request.form.get("reason", "").strip())
+        except (ValueError, StockConflict) as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            logs = StockLog.query.filter_by(product_id=product.id).order_by(StockLog.timestamp.desc()).all()
+            return render_template("stock_log.html", product=product, logs=logs), 409 if isinstance(exc, StockConflict) else 400
 
         flash("Stock updated.", "success")
         return redirect(url_for("products"))
