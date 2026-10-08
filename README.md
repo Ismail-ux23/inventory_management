@@ -9,7 +9,7 @@ No external APIs are used — everything runs locally.
 
 - Signup/login with hashed passwords (first user to sign up becomes admin)
 - Product CRUD (SKU, name, price, category, supplier, reorder level)
-- Stock in / stock out / manual adjustment, each written to a `StockLog`
+- Stock in / stock out / manual adjustment (including a correction to zero), each written to a `StockLog`
   table so quantity is never silently overwritten — you get a full history
 - Low-stock dashboard alerts
 - Category & supplier management
@@ -121,3 +121,34 @@ Press `Ctrl+C` in the VS Code terminal.
 - Excel/PDF export of reports
 - Multi-location / warehouse support
 - Role-based permissions (restrict delete actions to admins only)
+
+## Stock consistency and validation
+
+Product creation and its initial stock entry commit in one database transaction.
+Stock updates compare the balance read by the request with the current balance
+before writing. If another update changed it, the request returns HTTP 409 without
+adding an audit entry; review the refreshed balance and submit again. The balance
+and its log commit together, so a failed audit write rolls back the quantity change.
+
+Stock in/out require positive whole numbers; absolute adjustments allow zero.
+Quantity and reorder levels are limited to 0–2,147,483,647. Product forms reject
+negative or nonfinite prices, missing names/SKUs, and nonexistent categories or
+suppliers. Editing product details does not change stock.
+
+This behavior is tested with SQLite, including stale writers in independent
+sessions and failed audit inserts. Other databases and high-load contention have
+not been verified. Database lock errors are not automatically retried. Deleting a
+product also deletes its stock history, so the audit trail applies to retained
+products.
+
+## Development checks
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+GitHub Actions runs the regression suite on Python 3.12. Tests use a temporary
+SQLite database. `DATABASE_URL` can override the local database URI; changing
+this setting does not migrate existing data. No database schema change is needed
+for the stock fixes.

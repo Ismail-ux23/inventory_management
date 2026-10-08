@@ -13,8 +13,8 @@
     </select>
 
     <label>Quantity</label>
-    <input type="number" name="qty" min="1" required>
-    <p class="hint">For "In" / "Out" this is how much to add or remove. For "Adjustment" this is the new total quantity.</p>
+    <input type="number" name="qty" min="0" required>
+    <p class="hint">For "In" / "Out" this is how much to add or remove. For "Adjustment" this is the new total quantity (zero is allowed). In / Out must be greater than zero.</p>
 
     <label>Reason / Note</label>
     <input type="text" name="reason" placeholder="e.g. Weekly delivery, damaged goods, stock count correction">
